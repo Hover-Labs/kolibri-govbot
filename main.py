@@ -297,8 +297,8 @@ def watch_for_changes():
 
 
 if __name__ == "__main__":
-    # watch_for_changes()
+    watch_for_changes()
 
-    all_operations = fetch_all_history()[::-1]
-    handle_new_operations(all_operations)
+    # all_operations = fetch_all_history()[::-1]
+    # handle_new_operations(all_operations)
 
