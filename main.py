@@ -1,3 +1,4 @@
+import json
 import time
 import os
 from datetime import datetime
@@ -13,6 +14,7 @@ load_dotenv()
 try:
     SENTRY_URL = os.environ["SENTRY_DSN"]
 
+    print("Configuring Sentry with DSN {}...".format(SENTRY_URL))
     import sentry_sdk
     sentry_sdk.init(SENTRY_URL)
 
@@ -107,8 +109,7 @@ def fetch_contract_activity(since=None):
 def parse_operations_to_map(operations):
     op_map = {}
 
-    for op in operations:
-        print(op['counter'])
+    for op in operations[::-1]:
         if op['counter'] not in op_map:
             op_map[op['counter']] = [op]
         else:
@@ -277,28 +278,50 @@ def find_op(ops, entrypoint):
     return next(op for op in ops if op['entrypoint'] == entrypoint)
 
 def watch_for_changes():
-    bcd_payload = fetch_contract_activity()
-
-    latest_event_timestamp = latest_timestamp_from_operations(bcd_payload['operations'])
+    if os.path.exists('.shared/previous-state.json'):
+        print("Found .shared/previous-state.json, bootstrapping from that!")
+        with open('.shared/previous-state.json') as f:
+            previous_state = json.loads(f.read())
+            print("Previous state - {}".format(previous_state))
+            latest_event_timestamp = previous_state['latest-timestamp']
+    else:
+        print("No previous state found! Starting fresh...")
+        bcd_payload = fetch_contract_activity()
+        latest_event_timestamp = latest_timestamp_from_operations(bcd_payload['operations'])
 
     while True:
         search_timestamp = latest_event_timestamp + 1000  # Add a second to only look at future events
 
-        new_activity = fetch_contract_activity(since=search_timestamp)
+        try:
+            new_activity = fetch_contract_activity(since=search_timestamp)
+        except Exception as e:
+            sentry_sdk.capture_exception(e)
+            print("Exception processing contract activity! Sleeping for a bit and trying again...")
+            time.sleep(10)
+            continue
 
         new_operations = new_activity['operations']
 
         if len(new_operations) != 0:
             handle_new_operations(new_operations)
             latest_event_timestamp = latest_timestamp_from_operations(new_operations)
-        else:
-            print("No new activity, looping...")
-            time.sleep(30)
 
+            if not os.path.exists('.shared/previous-state.json'):
+                if not os.path.exists('.shared'):
+                    os.makedirs('.shared')
+            with open('.shared/previous-state.json', 'w') as f:
+                payload = json.dumps({
+                    "latest-timestamp": latest_event_timestamp,
+                    "updated": str(datetime.now())
+                })
+                f.write(payload)
+        else:
+            print("[{}] No new activity, looping...".format(datetime.now()))
+            time.sleep(30)
 
 if __name__ == "__main__":
     watch_for_changes()
 
-    # all_operations = fetch_all_history()[::-1]
+    # all_operations = fetch_all_history()
     # handle_new_operations(all_operations)
 
