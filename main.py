@@ -184,7 +184,9 @@ def handle_propose_operation(operations):
             },
             {
               "name": "Lambda",
-              "value": "```{}```".format(proposal_lambda)
+              "value": "```{}```".format(
+                  (proposal_lambda[:1024 - 9] + '...') if len(proposal_lambda) > (1024 - 9) else proposal_lambda
+              )
             }
           ],
           "thumbnail": {
